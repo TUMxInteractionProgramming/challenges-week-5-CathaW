@@ -16,6 +16,9 @@ var currentLocation = {
     what3words: "shelf.jetted.purple"
 };
 
+// Global variable to define the currently active tab
+var currentTab;
+
 /**
  * Switch channels name in the right app bar
  * @param channelObject
@@ -48,6 +51,8 @@ function switchChannel(channelObject) {
 
     /* #7 store selected channel in global variable */
     currentChannel = channelObject;
+    /* If the channel creation mode is active, it will be closed when chlicking on an existing channel */
+    leaveCreateChannel();
 }
 
 /* liking a channel on #click */
@@ -80,6 +85,8 @@ function selectTab(tabId) {
  */
 function toggleEmojis() {
     $('#emojis').toggle(); // #toggle
+    var emojis = require('emojis-list'); // get the emojis list by Kikobeats 
+    $('#emojis').html((emojis)); //show the entire emojis list on click
 }
 
 /**
@@ -107,17 +114,29 @@ function sendMessage() {
 
     // #8 let's now use the real message #input
     var message = new Message($('#message').val());
-    console.log("New message:", message);
 
-    // #8 convenient message append with jQuery:
-    $('#messages').append(createMessageElement(message));
+    // adds a variable to define the length of the message input
+    var messageContent = message.text;
+    // The if statement only sents messages that have at least 1 letter as input
+    if (messageContent.length > 0) {
+        console.log("New message:", message);
 
-    // #8 messages will scroll to a certain point if we apply a certain height, in this case the overall scrollHeight of the messages-div that increases with every message;
-    // it would also scroll to the bottom when using a very high number (e.g. 1000000000);
-    $('#messages').scrollTop($('#messages').prop('scrollHeight'));
+        // #8 convenient message append with jQuery:
+        $('#messages').append(createMessageElement(message));
 
-    // #8 clear the message input
-    $('#message').val('');
+        // #8 messages will scroll to a certain point if we apply a certain height, in this case the overall scrollHeight of the messages-div that increases with every message;
+        // it would also scroll to the bottom when using a very high number (e.g. 1000000000);
+        $('#messages').scrollTop($('#messages').prop('scrollHeight'));
+
+        // #8 clear the message input
+        $('#message').val('');
+
+        //adds the message input to the messages array in the current channel
+        currentChannel.messages.push(messageContent);
+
+        //updates the current channel's message count to the actual messages that were sent 
+        currentChannel.messageCount = currentChannel.messages.length-1;
+    }
 }
 
 /**
@@ -140,21 +159,40 @@ function createMessageElement(messageObject) {
         messageObject.createdOn.toLocaleString() +
         '<em>' + expiresIn+ ' min. left</em></h3>' +
         '<p>' + messageObject.text + '</p>' +
-        '<button>+5 min.</button>' +
+        '<button class="accent">+5 min.</button>' +
         '</div>';
 }
 
-
-function listChannels() {
+//Lists channels depending on the compare function
+function listChannels(sorting) {
     // #8 channel onload
     //$('#channels ul').append("<li>New Channel</li>")
-
+    $('#channels ul').empty();
+        if(sorting == 'sortNew') {
+            channels.sort(compareCreationDate);
+        } else if(sorting == 'sortTrending') {
+            channels.sort(compareMessageCount);
+        } else {
+            channels.sort(compareStarred);
+        }
     // #8 five new channels
-    $('#channels ul').append(createChannelElement(yummy));
-    $('#channels ul').append(createChannelElement(sevencontinents));
-    $('#channels ul').append(createChannelElement(killerapp));
-    $('#channels ul').append(createChannelElement(firstpersononmars));
-    $('#channels ul').append(createChannelElement(octoberfest));
+    for (i=0, len=channels.length; i<len; i++) {
+        $('#channels ul').append(createChannelElement(channels[i])) + "<br>";
+    }
+    currentTab=sorting;
+}
+
+// Comparing functions to sort the channels list in listChannels
+function compareCreationDate(yummy, sevencontinents){
+    return (sevencontinents.createdOn-yummy.createdOn);
+}
+
+function compareMessageCount(yummy, sevencontinents) {
+    return (sevencontinents.messageCount-yummy.messageCount);
+}
+
+function compareStarred(yummy, sevencontinents) {
+    return (sevencontinents.starred-yummy.starred);
 }
 
 /**
@@ -163,16 +201,7 @@ function listChannels() {
  * @returns {HTMLElement}
  */
 function createChannelElement(channelObject) {
-    /* this HTML is build in jQuery below:
-     <li>
-     {{ name }}
-        <span class="channel-meta">
-            <i class="far fa-star"></i>
-            <i class="fas fa-chevron-right"></i>
-        </span>
-     </li>
-     */
-
+    
     // create a channel
     var channel = $('<li>').text(channelObject.name);
 
@@ -192,4 +221,57 @@ function createChannelElement(channelObject) {
 
     // return the complete channel
     return channel;
+}
+
+//Function removes current messages and shows elements of the creating channel mode
+function enterCreateChannel() {
+    $('#messages').empty();
+    $('#new-channel').show();
+    $('#abort-button').show();
+    $('#create-button').show();
+}
+
+//Function removes elements of the creating channel mode & clears both input fields
+function leaveCreateChannel() {
+    $('#new-channel').hide();
+    $('#abort-button').hide();
+    $('#create-button').hide();
+    $('#message').val('');
+    $('#new-channel').val('');
+}
+
+//Constructor function for channel objects
+function Channel(name, messages) {
+    this.name = name;
+    this.createdOn = new Date(Date.now());
+    this.createdBy = currentLocation.what3words;
+    this.starred = true;
+    this.expiresIn = Math.round(((new Date(Date.now() + 800 * 60 * 1000)) - Date.now()) / 1000 / 60/ 24);
+    this.messageCount = 1;
+    this.messages = [messages];
+}
+
+//Function creates a new channel
+function createChannel() {
+    var newChannel = new Channel()
+    newChannel.name = $('#new-channel').val();
+    newChannel.messages = [$('#message').val()];
+    var channelContent = newChannel.name;
+    var messageContent = newChannel.messages;
+
+   //If statement evaluates correct channel creation in order for the new channel to be created
+    if (channelContent.length > 0 && channelContent.startsWith('#') && messageContent.length !== 0) {
+        switchChannel(newChannel);
+        channels.push(newChannel);
+         //Sorts the new added channel depending on the currently selected tab
+        if (currentTab == 'sortNew') {
+            listChannels('sortNew');
+        } else if (currentTab == 'sortTrending') {
+            listChannels('sortTrending');
+        } else {
+            listChannels();
+        }
+        sendMessage();
+        $('#messages').show();
+    }
 }
